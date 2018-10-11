@@ -57,8 +57,6 @@ dependencies {
         devTestappImplementation project(':r2-shared')
         devTestappWithLcpImplementation project(':r2-shared')
     }
-    intTestappImplementation 'com.github.readium:r2-shared-kotlin:develop-SNAPSHOT'
-    intTestappWithLcpImplementation 'com.github.readium:r2-shared-kotlin:develop-SNAPSHOT'
 
     //TODO conflicting support libraries, excluding these
     implementation('com.mcxiaoke.koi:core:0.5.5') {
@@ -69,8 +67,8 @@ dependencies {
         exclude module: 'support-v4'
     }
     implementation "com.android.support:appcompat-v7:$support_version"
-    implementation 'org.nanohttpd:nanohttpd:2.3.2-SNAPSHOT'
-    implementation 'org.nanohttpd:nanohttpd-nanolets:2.3.2-SNAPSHOT'
+    implementation 'com.github.NanoHttpd.nanohttpd:nanohttpd:fd80618e93d'
+    implementation 'com.github.NanoHttpd.nanohttpd:nanohttpd-nanolets:fd80618e93d'
     implementation 'com.google.code.gson:gson:2.8.2'
     implementation 'commons-io:commons-io:2.4'
     implementation 'org.zeroturnaround:zt-zip:1.12'
