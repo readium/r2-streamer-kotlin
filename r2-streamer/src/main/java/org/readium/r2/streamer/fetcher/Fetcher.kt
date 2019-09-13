@@ -14,9 +14,9 @@ import org.readium.r2.streamer.container.Container
 import org.readium.r2.streamer.server.Resources
 import java.io.InputStream
 
-class Fetcher(var publication: Publication, var container: Container, private val userPropertiesPath: String?, customResources: Resources? = null) {
+open class Fetcher(var publication: Publication, var container: Container, private val userPropertiesPath: String?, private val customResources: Resources? = null) {
     private var rootFileDirectory: String
-    private var contentFilters: ContentFilters?
+    private var contentFilters: ContentFilters? = null
 
     init {
         val rootFilePath = publication.internalData["rootfile"]
@@ -27,10 +27,12 @@ class Fetcher(var publication: Publication, var container: Container, private va
         } else {
             rootFileDirectory = ""
         }
-        contentFilters = getContentFilters(container.rootFile.mimetype, customResources)
     }
 
     fun data(path: String): ByteArray? {
+        if(contentFilters == null)
+            contentFilters = getContentFilters(container.rootFile.mimetype, customResources)
+
         var data: ByteArray? = container.data(path)
         if (data != null)
             data = contentFilters?.apply(data, publication, container, path)
@@ -38,6 +40,9 @@ class Fetcher(var publication: Publication, var container: Container, private va
     }
 
     fun dataStream(path: String): InputStream {
+        if(contentFilters == null)
+            contentFilters = getContentFilters(container.rootFile.mimetype, customResources)
+
         var inputStream = container.dataInputStream(path)
         inputStream = contentFilters?.apply(inputStream, publication, container, path) ?: inputStream
         return inputStream
@@ -50,7 +55,7 @@ class Fetcher(var publication: Publication, var container: Container, private va
         return container.dataLength(relativePath)
     }
 
-    private fun getContentFilters(mimeType: String?, customResources: Resources? = null): ContentFilters {
+    protected open fun getContentFilters(mimeType: String?, customResources: Resources? = null): ContentFilters {
         return when (mimeType) {
             "application/epub+zip", "application/oebps-package+xml" -> ContentFiltersEpub(userPropertiesPath, customResources)
             "application/vnd.comicbook+zip", "application/x-cbr" -> ContentFiltersCbz()
