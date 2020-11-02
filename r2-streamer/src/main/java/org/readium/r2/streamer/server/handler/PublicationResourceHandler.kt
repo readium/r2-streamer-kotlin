@@ -159,10 +159,10 @@ class PublicationResourceHandler : RouterNanoHTTPD.DefaultHandler() {
     }
 
     private fun responseFromFailure(error: Resource.Exception): Response {
-        val status = when(error) {
+        val status = when (error) {
             is Resource.Exception.NotFound -> Status.NOT_FOUND
             is Resource.Exception.Forbidden -> Status.FORBIDDEN
-            is Resource.Exception.Unavailable -> Status.SERVICE_UNAVAILABLE
+            is Resource.Exception.Unavailable, is Resource.Exception.Offline -> Status.SERVICE_UNAVAILABLE
             is Resource.Exception.BadRequest -> Status.BAD_REQUEST
             is Resource.Exception.Cancelled, is Resource.Exception.OutOfMemory, is Resource.Exception.Other -> Status.INTERNAL_ERROR
         }
