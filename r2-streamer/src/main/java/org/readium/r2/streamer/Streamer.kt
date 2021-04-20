@@ -29,7 +29,7 @@ import org.readium.r2.streamer.parser.image.ImageParser
 import org.readium.r2.streamer.parser.pdf.PdfParser
 import org.readium.r2.streamer.parser.pdf.PdfiumPdfDocumentFactory
 import org.readium.r2.streamer.parser.readium.ReadiumWebPubParser
-import java.lang.Exception
+import kotlin.Exception
 
 internal typealias PublicationTry<SuccessT> = Try<SuccessT, Publication.OpeningException>
 
@@ -124,7 +124,7 @@ class Streamer constructor(
                 } catch (e: Exception) {
                     throw Publication.OpeningException.ParsingFailed(e)
                 }
-            } ?: throw Publication.OpeningException.UnsupportedFormat
+            } ?: throw Publication.OpeningException.UnsupportedFormat(Exception("Cannot find a parser for this asset"))
 
         // Transform from the Content Protection.
         protectedAsset?.let { builder.apply(it.onCreatePublication) }
