@@ -19,7 +19,7 @@ import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.asset.FileAsset
 import org.readium.r2.shared.publication.asset.PublicationAsset
 import org.readium.r2.shared.publication.encryption.Encryption
-import org.readium.r2.shared.publication.services.search.IcuSearchService
+import org.readium.r2.shared.publication.services.search.StringSearchService
 import org.readium.r2.shared.util.Href
 import org.readium.r2.shared.util.logging.WarningLogger
 import org.readium.r2.shared.util.mediatype.MediaType
@@ -111,7 +111,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
             fetcher = fetcher,
             servicesBuilder = Publication.ServicesBuilder(
                 positions = (EpubPositionsService)::create,
-                search = IcuSearchService.createFactory(),
+                search = StringSearchService.createDefaultFactory(),
             )
         )
     }
