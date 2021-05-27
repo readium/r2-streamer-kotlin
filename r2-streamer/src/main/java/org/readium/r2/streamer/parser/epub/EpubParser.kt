@@ -11,18 +11,21 @@ package org.readium.r2.streamer.parser.epub
 
 import kotlinx.coroutines.runBlocking
 import org.readium.r2.shared.ReadiumCSSName
+import org.readium.r2.shared.Search
 import org.readium.r2.shared.drm.DRM
 import org.readium.r2.shared.fetcher.Fetcher
 import org.readium.r2.shared.fetcher.TransformingFetcher
-import org.readium.r2.shared.util.File
-import org.readium.r2.shared.format.Format
-import org.readium.r2.shared.format.MediaType
-import org.readium.r2.shared.publication.ContentLayout
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.asset.FileAsset
+import org.readium.r2.shared.publication.asset.PublicationAsset
 import org.readium.r2.shared.publication.encryption.Encryption
+import org.readium.r2.shared.publication.services.search.StringSearchService
 import org.readium.r2.shared.util.Href
 import org.readium.r2.shared.util.logging.WarningLogger
+import org.readium.r2.shared.util.mediatype.MediaType
+import org.readium.r2.shared.util.use
+import org.readium.r2.streamer.PublicationParser
 import org.readium.r2.streamer.container.Container
 import org.readium.r2.streamer.container.ContainerError
 import org.readium.r2.streamer.container.PublicationContainer
@@ -30,27 +33,26 @@ import org.readium.r2.streamer.extensions.fromArchiveOrDirectory
 import org.readium.r2.streamer.extensions.readAsXmlOrNull
 import org.readium.r2.streamer.fetcher.LcpDecryptor
 import org.readium.r2.streamer.parser.PubBox
-import org.readium.r2.streamer.PublicationParser
-import org.readium.r2.streamer.extensions.toTitle
+import java.io.File
 
 object EPUBConstant {
 
     @Deprecated("Use [MediaType.EPUB.toString()] instead", replaceWith = ReplaceWith("MediaType.EPUB.toString()"))
     val mimetype: String get() = MediaType.EPUB.toString()
 
-    private val ltrPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
+    internal val ltrPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
         ReadiumCSSName.ref("hyphens") to false,
         ReadiumCSSName.ref("ligatures") to false
     )
 
-    private val rtlPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
+    internal val rtlPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
         ReadiumCSSName.ref("hyphens") to false,
         ReadiumCSSName.ref("wordSpacing") to false,
         ReadiumCSSName.ref("letterSpacing") to false,
         ReadiumCSSName.ref("ligatures") to true
     )
 
-    private val cjkHorizontalPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
+    internal val cjkHorizontalPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
         ReadiumCSSName.ref("textAlignment") to false,
         ReadiumCSSName.ref("hyphens") to false,
         ReadiumCSSName.ref("paraIndent") to false,
@@ -58,7 +60,7 @@ object EPUBConstant {
         ReadiumCSSName.ref("letterSpacing") to false
     )
 
-    private val cjkVerticalPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
+    internal val cjkVerticalPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
         ReadiumCSSName.ref("scroll") to true,
         ReadiumCSSName.ref("columnCount") to false,
         ReadiumCSSName.ref("textAlignment") to false,
@@ -71,13 +73,6 @@ object EPUBConstant {
     val forceScrollPreset: MutableMap<ReadiumCSSName, Boolean> = mutableMapOf(
         ReadiumCSSName.ref("scroll") to true
     )
-
-    val userSettingsUIPreset: MutableMap<ContentLayout, MutableMap<ReadiumCSSName, Boolean>> = mutableMapOf(
-        ContentLayout.LTR to ltrPreset,
-        ContentLayout.RTL to rtlPreset,
-        ContentLayout.CJK_VERTICAL to cjkVerticalPreset,
-        ContentLayout.CJK_HORIZONTAL to cjkHorizontalPreset
-    )
 }
 
 /**
@@ -85,12 +80,13 @@ object EPUBConstant {
  */
 class EpubParser : PublicationParser, org.readium.r2.streamer.parser.PublicationParser {
 
-    override suspend fun parse(file: File, fetcher: Fetcher, warnings: WarningLogger?): Publication.Builder? =
-        _parse(file, fetcher, file.toTitle())
+    override suspend fun parse(asset: PublicationAsset, fetcher: Fetcher, warnings: WarningLogger?): Publication.Builder? =
+        _parse(asset, fetcher, asset.name)
 
-    suspend fun _parse(file: File, fetcher: Fetcher, fallbackTitle: String): Publication.Builder? {
+    @OptIn(Search::class)
+    suspend fun _parse(asset: PublicationAsset, fetcher: Fetcher, fallbackTitle: String): Publication.Builder? {
 
-        if (file.format() != Format.EPUB)
+        if (asset.mediaType() != MediaType.EPUB)
             return null
 
         val opfPath = getRootFilePath(fetcher)
@@ -116,7 +112,8 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
             manifest = manifest,
             fetcher = fetcher,
             servicesBuilder = Publication.ServicesBuilder(
-                positions = (EpubPositionsService)::create
+                positions = (EpubPositionsService)::create,
+                search = StringSearchService.createDefaultFactory(),
             )
         )
     }
@@ -127,6 +124,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
     ): PubBox? = runBlocking {
 
         val file = File(fileAtPath)
+        val asset = FileAsset(file)
 
         var fetcher = Fetcher.fromArchiveOrDirectory(fileAtPath)
             ?: throw ContainerError.missingFile(fileAtPath)
@@ -137,7 +135,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
         }
 
         val builder = try {
-            _parse(file, fetcher, fallbackTitle)
+            _parse(asset, fetcher, fallbackTitle)
         } catch (e: Exception) {
             return@runBlocking null
         } ?: return@runBlocking null
@@ -153,7 +151,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
 
         val container = PublicationContainer(
             publication = publication,
-            path = file.file.canonicalPath,
+            path = file.canonicalPath,
             mediaType = MediaType.EPUB,
             drm = drm
         ).apply {
@@ -192,7 +190,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
 
     private suspend fun parseDisplayOptions(fetcher: Fetcher): Map<String, String> {
         val displayOptionsXml =
-            fetcher.readAsXmlOrNull("/META-INF/com.kobobooks.display-options.xml")
+            fetcher.readAsXmlOrNull("/META-INF/com.apple.ibooks.display-options.xml")
             ?: fetcher.readAsXmlOrNull("/META-INF/com.kobobooks.display-options.xml")
 
         return displayOptionsXml?.getFirst("platform", "")
@@ -214,13 +212,15 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
 }
 
 internal fun Publication.setLayoutStyle() {
-    cssStyle = contentLayout.cssId
-    EPUBConstant.userSettingsUIPreset[contentLayout]?.let {
-        userSettingsUIPreset =
-            if (type == Publication.TYPE.WEBPUB) //FIXME : this is never true
-             EPUBConstant.forceScrollPreset
-            else
-                it
+    val layout = ReadiumCssLayout(metadata)
+
+    cssStyle = layout.cssId
+
+    userSettingsUIPreset = when (layout) {
+        ReadiumCssLayout.RTL -> EPUBConstant.rtlPreset
+        ReadiumCssLayout.LTR -> EPUBConstant.ltrPreset
+        ReadiumCssLayout.CJK_VERTICAL -> EPUBConstant.cjkVerticalPreset
+        ReadiumCssLayout.CJK_HORIZONTAL -> EPUBConstant.cjkHorizontalPreset
     }
 }
 

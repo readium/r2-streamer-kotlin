@@ -18,11 +18,12 @@ import org.readium.r2.shared.fetcher.LazyResource
 import org.readium.r2.shared.fetcher.ResourceTry
 import org.readium.r2.shared.fetcher.TransformingResource
 import org.readium.r2.shared.fetcher.mapCatching
-import org.readium.r2.shared.publication.ContentLayout
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.epub.EpubLayout
 import org.readium.r2.shared.publication.epub.layoutOf
 import org.readium.r2.shared.publication.presentation.presentation
+import org.readium.r2.shared.publication.services.isProtected
+import org.readium.r2.streamer.parser.epub.ReadiumCssLayout
 import org.readium.r2.streamer.server.Resources
 import java.io.File
 
@@ -35,7 +36,7 @@ internal class HtmlInjector(
     fun transform(resource: Resource): Resource = LazyResource {
 
         val link = resource.link()
-        if (link.mediaType?.isHtml == true)
+        if (link.mediaType.isHtml)
             inject(resource)
         else
             resource
@@ -45,7 +46,7 @@ internal class HtmlInjector(
 
         override suspend fun transform(data: ResourceTry<ByteArray>): ResourceTry<ByteArray> =
             resource.read().mapCatching {
-                val trimmedText = it.toString(link().mediaType?.charset ?: Charsets.UTF_8).trim()
+                val trimmedText = it.toString(link().mediaType.charset ?: Charsets.UTF_8).trim()
                 val res = if (publication.metadata.presentation.layoutOf(link()) == EpubLayout.REFLOWABLE)
                     injectReflowableHtml(trimmedText)
                 else
@@ -63,15 +64,15 @@ internal class HtmlInjector(
         if (endHeadIndex == -1)
             return content
 
-        val contentLayout = publication.contentLayout
+        val layout = ReadiumCssLayout(publication.metadata)
 
         val endIncludes = mutableListOf<String>()
         val beginIncludes = mutableListOf<String>()
         beginIncludes.add("<meta name=\"viewport\" content=\"width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=0\" />")
 
-        beginIncludes.add(getHtmlLink("/assets/readium-css/${contentLayout.readiumCSSPath}ReadiumCSS-before.css"))
-        endIncludes.add(getHtmlLink("/assets/readium-css/${contentLayout.readiumCSSPath}ReadiumCSS-after.css"))
-        endIncludes.add(getHtmlScript("/assets/scripts/touchHandling.js"))
+        beginIncludes.add(getHtmlLink("/assets/readium-css/${layout.readiumCSSPath}ReadiumCSS-before.css"))
+        endIncludes.add(getHtmlLink("/assets/readium-css/${layout.readiumCSSPath}ReadiumCSS-after.css"))
+        endIncludes.add(getHtmlScript("/assets/scripts/gestures.js"))
         endIncludes.add(getHtmlScript("/assets/scripts/utils.js"))
         endIncludes.add(getHtmlScript("/assets/scripts/crypto-sha256.js"))
         endIncludes.add(getHtmlScript("/assets/scripts/highlight.js"))
@@ -101,6 +102,19 @@ internal class HtmlInjector(
         }
         resourceHtml = StringBuilder(resourceHtml).insert(endHeadIndex, getHtmlFont(fontFamily = "OpenDyslexic", href = "/assets/fonts/OpenDyslexic-Regular.otf")).toString()
         resourceHtml = StringBuilder(resourceHtml).insert(endHeadIndex, "<style>@import url('https://fonts.googleapis.com/css?family=PT+Serif|Roboto|Source+Sans+Pro|Vollkorn');</style>\n").toString()
+
+        // Disable the text selection if the publication is protected.
+        // FIXME: This is a hack until proper LCP copy is implemented, see https://github.com/readium/r2-testapp-kotlin/issues/266
+        if (publication.isProtected) {
+            resourceHtml = StringBuilder(resourceHtml).insert(endHeadIndex, """
+                <style>
+                *:not(input):not(textarea) {
+                    user-select: none;
+                    -webkit-user-select: none;
+                }
+                </style>
+            """).toString()
+        }
 
         // Inject userProperties
         getProperties(publication.userSettingsUIPreset)?.let { propertyPair ->
@@ -156,7 +170,7 @@ internal class HtmlInjector(
         if (endHeadIndex == -1)
             return content
         val includes = mutableListOf<String>()
-        includes.add(getHtmlScript("/assets/scripts/touchHandling.js"))
+        includes.add(getHtmlScript("/assets/scripts/gestures.js"))
         includes.add(getHtmlScript("/assets/scripts/utils.js"))
         for (element in includes) {
             resourceHtml = StringBuilder(resourceHtml).insert(endHeadIndex, element).toString()
@@ -294,13 +308,6 @@ internal class HtmlInjector(
             string = string + " " + property.key + ": " + property.value + ";"
         }
         return string
-    }
-
-    private val ContentLayout.readiumCSSPath: String get() = when(this)  {
-        ContentLayout.LTR -> ""
-        ContentLayout.RTL -> "rtl/"
-        ContentLayout.CJK_VERTICAL -> "cjk-vertical/"
-        ContentLayout.CJK_HORIZONTAL -> "cjk-horizontal/"
     }
 
 }

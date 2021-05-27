@@ -12,16 +12,16 @@ package org.readium.r2.streamer
 import android.content.Context
 import org.readium.r2.shared.PdfSupport
 import org.readium.r2.shared.fetcher.Fetcher
-import org.readium.r2.shared.util.File
-import org.readium.r2.shared.format.Format
 import org.readium.r2.shared.publication.ContentProtection
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.asset.PublicationAsset
 import org.readium.r2.shared.util.Try
 import org.readium.r2.shared.util.archive.ArchiveFactory
 import org.readium.r2.shared.util.archive.DefaultArchiveFactory
+import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.shared.util.logging.WarningLogger
+import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.shared.util.pdf.PdfDocumentFactory
-import org.readium.r2.streamer.extensions.fromFile
 import org.readium.r2.streamer.parser.audio.AudioParser
 import org.readium.r2.streamer.parser.epub.EpubParser
 import org.readium.r2.streamer.parser.epub.setLayoutStyle
@@ -29,8 +29,7 @@ import org.readium.r2.streamer.parser.image.ImageParser
 import org.readium.r2.streamer.parser.pdf.PdfParser
 import org.readium.r2.streamer.parser.pdf.PdfiumPdfDocumentFactory
 import org.readium.r2.streamer.parser.readium.ReadiumWebPubParser
-import java.io.FileNotFoundException
-import java.lang.Exception
+import kotlin.Exception
 
 internal typealias PublicationTry<SuccessT> = Try<SuccessT, Publication.OpeningException>
 
@@ -47,6 +46,7 @@ internal typealias PublicationTry<SuccessT> = Try<SuccessT, Publication.OpeningE
  * @param ignoreDefaultParsers When true, only parsers provided in parsers will be used.
  * @param archiveFactory Opens an archive (e.g. ZIP, RAR), optionally protected by credentials.
  * @param pdfFactory Parses a PDF document, optionally protected by password.
+ * @param httpClient Service performing HTTP requests.
  * @param onCreatePublication Called on every parsed [Publication.Builder]. It can be used to modify
  *   the [Manifest], the root [Fetcher] or the list of service factories of a [Publication].
  */
@@ -58,11 +58,12 @@ class Streamer constructor(
     private val contentProtections: List<ContentProtection> = emptyList(),
     private val archiveFactory: ArchiveFactory = DefaultArchiveFactory(),
     private val pdfFactory: PdfDocumentFactory = DefaultPdfDocumentFactory(context),
+    private val httpClient: DefaultHttpClient = DefaultHttpClient(),
     private val onCreatePublication: Publication.Builder.() -> Unit = {}
 ) {
 
     /**
-     * Parses a [Publication] from the given file.
+     * Parses a [Publication] from the given asset.
      *
      * If you are opening the publication to render it in a Navigator, you must set [allowUserInteraction]
      * to true to prompt the user for its credentials when the publication is protected. However,
@@ -77,7 +78,7 @@ class Streamer constructor(
      * publication authoring mistakes. This can be useful to warn users of potential rendering
      * issues.
      *
-     * @param file Path to the publication file..
+     * @param asset Digital medium (e.g. a file) used to access the publication.
      * @param credentials Credentials that Content Protections can use to attempt to unlock a
      *   publication, for example a password.
      * @param allowUserInteraction Indicates whether the user can be prompted, for example for its
@@ -88,11 +89,11 @@ class Streamer constructor(
      *   It can be used to modify the [Manifest], the root [Fetcher] or the list of service
      *   factories of the [Publication].
      * @param warnings Logger used to broadcast non-fatal parsing warnings.
-     * @return Null if the file was not recognized by any parser, or a [Publication.OpeningException]
-     *   in case of failure.
+     * @return Null if the asset was not recognized by any parser, or a
+     *   [Publication.OpeningException] in case of failure.
      */
     suspend fun open(
-        file: File,
+        asset: PublicationAsset,
         credentials: String? = null,
         allowUserInteraction: Boolean,
         sender: Any? = null,
@@ -101,41 +102,32 @@ class Streamer constructor(
     ): PublicationTry<Publication> = try {
 
         @Suppress("NAME_SHADOWING")
-        var file = file
-        var fetcher = try {
-            Fetcher.fromFile(file.file, archiveFactory)
-        } catch (e: SecurityException) {
-            throw Publication.OpeningException.Forbidden(e)
-        } catch (e: FileNotFoundException) {
-            throw Publication.OpeningException.NotFound
-        }
+        var asset = asset
+        var fetcher = asset.createFetcher(PublicationAsset.Dependencies(archiveFactory = archiveFactory), credentials = credentials)
+            .getOrThrow()
 
-        val protectedFile = contentProtections
+        val protectedAsset = contentProtections
             .lazyMapFirstNotNullOrNull {
-                it.open(file, fetcher, credentials, allowUserInteraction, sender)
+                it.open(asset, fetcher, credentials, allowUserInteraction, sender)
             }
             ?.getOrThrow()
 
-        if (protectedFile != null) {
-            file = protectedFile.file
-            fetcher = protectedFile.fetcher
+        if (protectedAsset != null) {
+            asset = protectedAsset.asset
+            fetcher = protectedAsset.fetcher
         }
 
         val builder = parsers
             .lazyMapFirstNotNullOrNull {
                 try {
-                    it.parse(
-                        file,
-                        fetcher,
-                        warnings
-                    )
+                    it.parse(asset, fetcher, warnings)
                 } catch (e: Exception) {
                     throw Publication.OpeningException.ParsingFailed(e)
                 }
-            } ?: throw Publication.OpeningException.UnsupportedFormat
+            } ?: throw Publication.OpeningException.UnsupportedFormat(Exception("Cannot find a parser for this asset"))
 
         // Transform from the Content Protection.
-        protectedFile?.let { builder.apply(it.onCreatePublication) }
+        protectedAsset?.let { builder.apply(it.onCreatePublication) }
         // Transform provided by the reading app during the construction of the Streamer.
         builder.apply(this.onCreatePublication)
         // Transform provided by the reading app in `Streamer.open()`.
@@ -144,7 +136,7 @@ class Streamer constructor(
         val publication = builder
             .apply(onCreatePublication)
             .build()
-            .apply { addLegacyProperties(file.format()) }
+            .apply { addLegacyProperties(asset.mediaType()) }
 
         Try.success(publication)
 
@@ -156,7 +148,7 @@ class Streamer constructor(
         listOf(
             EpubParser(),
             PdfParser(context, pdfFactory),
-            ReadiumWebPubParser(pdfFactory),
+            ReadiumWebPubParser(pdfFactory, httpClient),
             ImageParser(),
             AudioParser()
         )
@@ -173,20 +165,20 @@ class Streamer constructor(
         return null
     }
 
-    private fun Publication.addLegacyProperties(format: Format?) {
-        type = format.toPublicationType()
+    private fun Publication.addLegacyProperties(mediaType: MediaType?) {
+        type = mediaType.toPublicationType()
 
-        if (format == Format.EPUB)
+        if (mediaType == MediaType.EPUB)
             setLayoutStyle()
     }
 }
 
-internal fun Format?.toPublicationType(): Publication.TYPE =
+internal fun MediaType?.toPublicationType(): Publication.TYPE =
     when (this) {
-        Format.READIUM_AUDIOBOOK, Format.READIUM_AUDIOBOOK_MANIFEST, Format.LCP_PROTECTED_AUDIOBOOK -> Publication.TYPE.AUDIO
-        Format.DIVINA, Format.DIVINA_MANIFEST -> Publication.TYPE.DiViNa
-        Format.CBZ -> Publication.TYPE.CBZ
-        Format.EPUB -> Publication.TYPE.EPUB
+        MediaType.READIUM_AUDIOBOOK, MediaType.READIUM_AUDIOBOOK_MANIFEST, MediaType.LCP_PROTECTED_AUDIOBOOK -> Publication.TYPE.AUDIO
+        MediaType.DIVINA, MediaType.DIVINA_MANIFEST -> Publication.TYPE.DiViNa
+        MediaType.CBZ -> Publication.TYPE.CBZ
+        MediaType.EPUB -> Publication.TYPE.EPUB
         else -> Publication.TYPE.WEBPUB
     }
 

@@ -17,11 +17,10 @@ import org.readium.r2.shared.fetcher.FileFetcher
 import org.readium.r2.shared.fetcher.Resource
 import org.readium.r2.shared.parser.xml.ElementNode
 import org.readium.r2.shared.publication.Link
-import org.readium.r2.shared.util.archive.Archive
 import org.readium.r2.shared.util.archive.ArchiveFactory
 import org.readium.r2.shared.util.archive.DefaultArchiveFactory
+import org.readium.r2.shared.util.use
 import java.io.File
-import java.io.FileNotFoundException
 
 /** Returns the resource data at the given [Link]'s HREF, or throws a [Resource.Exception] */
 @Throws(Resource.Exception::class)
@@ -56,24 +55,6 @@ internal suspend fun Fetcher.Companion.fromArchiveOrDirectory(
     }
 }
 
-/** Creates a [Fetcher] from either a file or an exploded directory.
- *
- * Can throw SecurityException or FileNotFoundException.
- */
-internal suspend fun Fetcher.Companion.fromFile(
-    file: File,
-    archiveFactory: ArchiveFactory = DefaultArchiveFactory()
-): Fetcher =
-    when {
-        file.isDirectory ->
-            FileFetcher(href = "/", file = file)
-        file.exists() ->
-            ArchiveFetcher.fromPath(file.path, archiveFactory)
-                ?: FileFetcher(href = "/${file.name}", file = file)
-        else ->
-            throw FileNotFoundException(file.path)
-    }
-
 internal suspend fun Fetcher.guessTitle(): String? {
     val firstLink = links().firstOrNull() ?: return null
     val commonFirstComponent = links().hrefCommonFirstComponent() ?: return null
@@ -81,5 +62,5 @@ internal suspend fun Fetcher.guessTitle(): String? {
     if (commonFirstComponent.name == firstLink.href.removePrefix("/"))
        return null
 
-    return commonFirstComponent.toTitle()
+    return commonFirstComponent.name
 }

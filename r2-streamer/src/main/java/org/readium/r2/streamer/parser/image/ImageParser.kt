@@ -9,59 +9,50 @@
 
 package org.readium.r2.streamer.parser.image
 
-import org.readium.r2.shared.extensions.md5
 import org.readium.r2.shared.fetcher.Fetcher
-import org.readium.r2.shared.util.File
-import org.readium.r2.shared.format.Format
-import org.readium.r2.shared.publication.Link
-import org.readium.r2.shared.publication.LocalizedString
-import org.readium.r2.shared.publication.Manifest
-import org.readium.r2.shared.publication.Metadata
-import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.*
+import org.readium.r2.shared.publication.asset.PublicationAsset
 import org.readium.r2.shared.publication.services.PerResourcePositionsService
 import org.readium.r2.shared.util.logging.WarningLogger
+import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.streamer.PublicationParser
 import org.readium.r2.streamer.extensions.guessTitle
 import org.readium.r2.streamer.extensions.isHiddenOrThumbs
 import org.readium.r2.streamer.extensions.lowercasedExtension
-import org.readium.r2.streamer.extensions.toTitle
-import java.lang.Exception
+import java.io.File
 
 /**
- * Parses an image–based Publication from an unstructured archive format containing bitmap files, such as CBZ or a simple ZIP.
+ * Parses an image–based Publication from an unstructured archive format containing bitmap files,
+ * such as CBZ or a simple ZIP.
  *
  * It can also work for a standalone bitmap file.
  */
 class ImageParser : PublicationParser {
 
     override suspend fun parse(
-        file: File,
+        asset: PublicationAsset,
         fetcher: Fetcher,
         warnings: WarningLogger?
     ): Publication.Builder? {
 
-        if (!accepts(file, fetcher))
+        if (!accepts(asset, fetcher))
             return null
 
         val readingOrder = fetcher.links()
-            .filter { !File(it.href).isHiddenOrThumbs && it.mediaType?.isBitmap == true }
+            .filter { !File(it.href).isHiddenOrThumbs && it.mediaType.isBitmap }
             .sortedBy(Link::href)
             .toMutableList()
 
         if (readingOrder.isEmpty())
             throw Exception("No bitmap found in the publication.")
 
-        val title = fetcher.guessTitle()
-            ?: file.toTitle()
+        val title = fetcher.guessTitle() ?: asset.name
 
         // First valid resource is the cover.
         readingOrder[0] = readingOrder[0].copy(rels = setOf("cover"))
 
         val manifest = Manifest(
-            metadata = Metadata(
-                identifier = file.file.md5(),
-                localizedTitle = LocalizedString(title)
-            ),
+            metadata = Metadata(localizedTitle = LocalizedString(title)),
             readingOrder = readingOrder
         )
 
@@ -74,15 +65,15 @@ class ImageParser : PublicationParser {
         )
     }
 
-    private suspend fun accepts(file: File, fetcher: Fetcher): Boolean {
-        if (file.format() == Format.CBZ)
+    private suspend fun accepts(asset: PublicationAsset, fetcher: Fetcher): Boolean {
+        if (asset.mediaType() == MediaType.CBZ)
             return true
 
         val allowedExtensions = listOf("acbf", "txt", "xml")
 
         if (fetcher.links()
                 .filterNot { File(it.href).isHiddenOrThumbs }
-                .all { it.mediaType?.isBitmap == true || File(it.href).lowercasedExtension in allowedExtensions })
+                .all { it.mediaType.isBitmap || File(it.href).lowercasedExtension in allowedExtensions })
             return true
 
         return false

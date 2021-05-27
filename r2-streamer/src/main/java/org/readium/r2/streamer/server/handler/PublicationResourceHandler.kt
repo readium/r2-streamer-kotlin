@@ -20,7 +20,7 @@ import org.nanohttpd.protocols.http.response.Status
 import org.nanohttpd.router.RouterNanoHTTPD
 import org.readium.r2.shared.fetcher.Resource
 import org.readium.r2.shared.fetcher.ResourceInputStream
-import org.readium.r2.shared.format.MediaType
+import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.streamer.BuildConfig.DEBUG
 import org.readium.r2.streamer.server.ServingFetcher
 import timber.log.Timber
@@ -52,6 +52,13 @@ class PublicationResourceHandler : RouterNanoHTTPD.DefaultHandler() {
 
         try {
             serveResponse(session, resource)
+                .apply {
+                    // Disable HTTP caching for publication resources, because it poses a security
+                    // threat for protected publications.
+                    addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                    addHeader("Pragma", "no-cache")
+                    addHeader("Expires", "0")
+                }
         } catch(e: Resource.Exception) {
             Timber.e(e)
             responseFromFailure(e)
@@ -69,7 +76,7 @@ class PublicationResourceHandler : RouterNanoHTTPD.DefaultHandler() {
         // In the latter case, NanoHTTPd will close it at the end of the transmission.
 
         var rangeRequest: String? = session.headers["range"]
-        val mimeType = (resource.link().mediaType ?: MediaType.BINARY).toString()
+        val mimeType = resource.link().mediaType.toString()
 
         // Calculate etag
         val etag = Integer.toHexString(resource.hashCode()) //FIXME: Is this working?
