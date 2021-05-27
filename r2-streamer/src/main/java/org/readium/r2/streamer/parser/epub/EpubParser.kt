@@ -11,6 +11,7 @@ package org.readium.r2.streamer.parser.epub
 
 import kotlinx.coroutines.runBlocking
 import org.readium.r2.shared.ReadiumCSSName
+import org.readium.r2.shared.Search
 import org.readium.r2.shared.drm.DRM
 import org.readium.r2.shared.fetcher.Fetcher
 import org.readium.r2.shared.fetcher.TransformingFetcher
@@ -82,6 +83,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
     override suspend fun parse(asset: PublicationAsset, fetcher: Fetcher, warnings: WarningLogger?): Publication.Builder? =
         _parse(asset, fetcher, asset.name)
 
+    @OptIn(Search::class)
     suspend fun _parse(asset: PublicationAsset, fetcher: Fetcher, fallbackTitle: String): Publication.Builder? {
 
         if (asset.mediaType() != MediaType.EPUB)
