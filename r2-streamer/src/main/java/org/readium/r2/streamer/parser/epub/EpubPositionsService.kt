@@ -13,7 +13,6 @@ import org.readium.r2.shared.fetcher.Fetcher
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.publication.encryption.encryption
 import org.readium.r2.shared.publication.epub.EpubLayout
 import org.readium.r2.shared.publication.epub.layoutOf
 import org.readium.r2.shared.publication.presentation.Presentation
@@ -93,10 +92,14 @@ internal class EpubPositionsService(
     )
 
     private suspend fun createReflowable(link: Link, startPosition: Int, fetcher: Fetcher): List<Locator> {
-        // If the resource is encrypted, we use the `originalLength` declared in `encryption.xml`
-        // instead of the ZIP entry length.
-        val length = link.properties.encryption?.originalLength
-            ?: fetcher.get(link).use { it.length().getOrNull() }
+        // We use the the compressed length of entries as the base length, since it's closer to the
+        // RMSDK algorithm and gives results closer to real pages.
+        // See https://github.com/readium/architecture/issues/123
+        val resource = fetcher.get(link)
+        val length = resource.use {
+                it.link().properties["compressedLength"] as? Long
+                    ?: it.length().getOrNull()
+            }
             ?: return emptyList()
 
         val pageCount = ceil(length / reflowablePositionLength.toDouble()).toInt()
