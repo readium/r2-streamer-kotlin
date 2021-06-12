@@ -28,6 +28,9 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
     }
+    kotlinOptions {
+        freeCompilerArgs += "-Xopt-in=kotlin.RequiresOptIn"
+    }
     buildTypes {
         release {
             minifyEnabled false
@@ -46,7 +49,7 @@ dependencies {
     }
 
     final JACKSON_VERSION = '2.12.1'
-    implementation "androidx.appcompat:appcompat:1.3.0-beta01"
+    implementation "androidx.appcompat:appcompat:1.3.0"
     implementation "com.fasterxml.jackson.core:jackson-annotations:$JACKSON_VERSION"
     implementation "com.fasterxml.jackson.core:jackson-core:$JACKSON_VERSION"
     implementation "com.fasterxml.jackson.core:jackson-databind:$JACKSON_VERSION"
@@ -68,7 +71,7 @@ dependencies {
     implementation("com.mcxiaoke.koi:async:0.5.5") {
         exclude module: 'support-v4'
     }
-    implementation "joda-time:joda-time:2.10.5"
+    implementation "joda-time:joda-time:2.10.10"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.2"
 
     testImplementation "androidx.test.ext:junit-ktx:1.1.2"
