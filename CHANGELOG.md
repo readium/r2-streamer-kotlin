@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 
 * EPUB publications implement a `SearchService` to search through the content.
 
+### Fixed
+
+* EPUB style injection when a resource has a `<head>` tag with attributes.
+
 
 ## [2.0.0]
 
