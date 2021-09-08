@@ -53,10 +53,10 @@ internal class HtmlInjector(
 
     }
 
-    private fun injectReflowableHtml(content: String): String {
+    internal fun injectReflowableHtml(content: String): String {
         var resourceHtml = content
         // Inject links to css and js files
-        val head = Regex("""<head.*>""").find(resourceHtml, 0)
+        val head = Regex("""<head.*?>""").find(resourceHtml, 0)
         if (head == null) {
             Timber.e("No <head> tag found in this resource")
             return resourceHtml
@@ -116,14 +116,14 @@ internal class HtmlInjector(
 
         // Inject userProperties
         getProperties(publication.userSettingsUIPreset)?.let { propertyPair ->
-            val html = Regex("""<html.*>""").find(resourceHtml, 0)
+            val html = Regex("""<html.*?>""").find(resourceHtml, 0)
             html?.let {
                 val match = Regex("""(style=("([^"]*)"[ >]))|(style='([^']*)'[ >])""").find(html.value, 0)
                 if (match != null) {
                     val beginStyle = match.range.first + 7
                     var newHtml = html.value
                     newHtml = StringBuilder(newHtml).insert(beginStyle, "${buildStringProperties(propertyPair)} ").toString()
-                    resourceHtml = StringBuilder(resourceHtml).replace(Regex("""<html.*>"""), newHtml)
+                    resourceHtml = StringBuilder(resourceHtml).replace(Regex("""<html.*?>"""), newHtml)
                 } else {
                     val beginHtmlIndex = resourceHtml.indexOf("<html", 0, false) + 5
                     resourceHtml = StringBuilder(resourceHtml).insert(beginHtmlIndex, " style=\"${buildStringProperties(propertyPair)}\"").toString()
@@ -142,7 +142,7 @@ internal class HtmlInjector(
     private fun applyDirectionAttribute(resourceHtml: String, publication: Publication): String {
         var resourceHtml1 = resourceHtml
         fun addRTLDir(tagName: String, html: String): String {
-            return Regex("""<$tagName.*>""").find(html, 0)?.let { result ->
+            return Regex("""<$tagName.*?>""").find(html, 0)?.let { result ->
                 Regex("""dir=""").find(result.value, 0)?.let {
                     html
                 } ?: run {
