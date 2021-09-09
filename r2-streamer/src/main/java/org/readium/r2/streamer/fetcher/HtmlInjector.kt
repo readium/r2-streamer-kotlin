@@ -53,7 +53,7 @@ internal class HtmlInjector(
 
     }
 
-    internal fun injectReflowableHtml(content: String): String {
+    private fun injectReflowableHtml(content: String): String {
         var resourceHtml = content
         // Inject links to css and js files
         val head = regexForOpeningHTMLTag("head").find(resourceHtml, 0)

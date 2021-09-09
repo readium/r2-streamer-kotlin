@@ -1,18 +1,12 @@
 package org.readium.r2.streamer.fetcher
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
-import org.readium.r2.shared.publication.LocalizedString
-import org.readium.r2.shared.publication.Manifest
-import org.readium.r2.shared.publication.Metadata
-import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.fetcher.StringResource
+import org.readium.r2.shared.publication.*
 import kotlin.test.assertEquals
 
 class HtmlInjectorTest {
-
-    private val sut = HtmlInjector(
-        publication = Publication(manifest = Manifest(metadata = Metadata(localizedTitle = LocalizedString("")))),
-        userPropertiesPath = null
-    )
 
     @Test
     fun `Inject a reflowable with a simple HEAD`() {
@@ -33,7 +27,7 @@ class HtmlInjectorTest {
                     <body></body>
                 </html>
             """.trimIndent(),
-            sut.injectReflowableHtml("""
+            transform("""
                 <?xml version="1.0" encoding="utf-8"?>
                 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
                 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -66,7 +60,7 @@ class HtmlInjectorTest {
                     <body></body>
                 </html>
             """.trimIndent(),
-            sut.injectReflowableHtml("""
+            transform("""
                 <?xml version="1.0" encoding="utf-8"?>
                 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
                 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -92,7 +86,7 @@ class HtmlInjectorTest {
                 <style type="text/css"> @font-face{font-family: "OpenDyslexic"; src:url("/assets/fonts/OpenDyslexic-Regular.otf") format('truetype');}</style>
                 </head><body></body></html>
             """.trimIndent(),
-            sut.injectReflowableHtml("""
+            transform("""
                 <?xml version="1.0" encoding="utf-8"?>
                 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head xmlns:xlink="http://www.w3.org/1999/xlink"><title>Publication</title><link rel="stylesheet" href="style.css" type="text/css"/></head><body></body></html>
             """.trimIndent())
@@ -113,13 +107,27 @@ class HtmlInjectorTest {
                 <style type="text/css"> @font-face{font-family: "OpenDyslexic"; src:url("/assets/fonts/OpenDyslexic-Regular.otf") format('truetype');}</style>
                 </HEAD><body></body></html>
             """.trimIndent(),
-            sut.injectReflowableHtml("""
+            transform("""
                 <?xml version="1.0" encoding="utf-8"?>
                 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><HEAD
                  xmlns:xlink="http://www.w3.org/1999/xlink"
                  ><title>Publication</title><link rel="stylesheet" href="style.css" type="text/css"/></HEAD><body></body></html>
             """.trimIndent())
         )
+    }
+
+    private fun transform(content: String): String = runBlocking {
+        val sut = HtmlInjector(
+            publication = Publication(manifest = Manifest(metadata = Metadata(localizedTitle = LocalizedString("")))),
+            userPropertiesPath = null
+        )
+
+        val link = Link(href = "", type = "application/xhtml+xml")
+
+        sut
+            .transform(StringResource(link, content))
+            .readAsString()
+            .getOrThrow()
     }
 
 }
