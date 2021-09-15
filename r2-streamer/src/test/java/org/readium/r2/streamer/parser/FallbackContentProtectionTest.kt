@@ -79,6 +79,26 @@ class FallbackContentProtectionTest {
         assertEquals(Scheme.Adept, sniff(
             mediaType = MediaType.EPUB,
             resources = mapOf(
+                "/META-INF/encryption.xml" to """<?xml version="1.0"?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <EncryptedData xmlns="http://www.w3.org/2001/04/xmlenc#">
+    <EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc"></EncryptionMethod>
+    <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+      <resource xmlns="http://ns.adobe.com/adept">urn:uuid:2c43729c-b985-4531-8e86-ae75ce5e5da9</resource>
+    </KeyInfo>
+    <CipherData>
+      <CipherReference URI="OEBPS/stylesheet.css"></CipherReference>
+    </CipherData>
+  </EncryptedData>
+  </encryption>"""
+            )
+        ))
+    }
+
+    @Test
+    fun `Sniff Adobe ADEPT from rights xml`() {
+        assertEquals(Scheme.Adept, sniff(
+            mediaType = MediaType.EPUB,
+            resources = mapOf(
                 "/META-INF/encryption.xml" to """<?xml version='1.0' encoding='utf-8'?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#"></encryption>""",
                 "/META-INF/rights.xml" to """<?xml version="1.0"?><adept:rights xmlns:adept="http://ns.adobe.com/adept"></adept:rights>"""
             )

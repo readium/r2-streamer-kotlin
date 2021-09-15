@@ -19,6 +19,7 @@ import org.readium.r2.shared.util.mediatype.MediaType
 import org.readium.r2.streamer.extensions.readAsJsonOrNull
 import org.readium.r2.streamer.extensions.readAsXmlOrNull
 import org.readium.r2.streamer.parser.epub.EncryptionParser
+import org.readium.r2.streamer.parser.epub.Namespaces
 
 /**
  * [ContentProtection] implementation used as a fallback by the Streamer to detect known DRM
@@ -68,9 +69,9 @@ internal class FallbackContentProtection : ContentProtection {
                 Scheme.Lcp
 
             mediaType.matches(MediaType.EPUB) -> {
-                val encryption = fetcher.readAsXmlOrNull("/META-INF/encryption.xml")
-                    ?.let { EncryptionParser.parse(it) }
-                val rights = fetcher.readAsXmlOrNull("/META-INF/rights.xml")
+                val rightsXml = fetcher.readAsXmlOrNull("/META-INF/rights.xml")
+                val encryptionXml = fetcher.readAsXmlOrNull("/META-INF/encryption.xml")
+                val encryption = encryptionXml?.let { EncryptionParser.parse(it) }
 
                 when {
                     (
@@ -79,8 +80,14 @@ internal class FallbackContentProtection : ContentProtection {
                     ) -> Scheme.Lcp
 
                     (
-                        encryption != null &&
-                        rights?.namespace == "http://ns.adobe.com/adept"
+                        encryptionXml != null && (
+                            rightsXml?.namespace == "http://ns.adobe.com/adept" ||
+                            encryptionXml
+                                .get("EncryptedData", Namespaces.ENC)
+                                .flatMap { it.get("KeyInfo", Namespaces.SIG) }
+                                .flatMap { it.get("resource", "http://ns.adobe.com/adept")}
+                                .isNotEmpty()
+                        )
                     ) -> Scheme.Adept
 
                     // A file with only obfuscated fonts might still have an `encryption.xml` file.
