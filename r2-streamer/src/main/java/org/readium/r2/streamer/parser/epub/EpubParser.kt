@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import org.readium.r2.shared.ReadiumCSSName
 import org.readium.r2.shared.Search
 import org.readium.r2.shared.drm.DRM
+import org.readium.r2.shared.extensions.addPrefix
 import org.readium.r2.shared.fetcher.Fetcher
 import org.readium.r2.shared.fetcher.TransformingFetcher
 import org.readium.r2.shared.publication.Link
@@ -77,8 +78,13 @@ object EPUBConstant {
 
 /**
  * Parses a Publication from an EPUB publication.
+ *
+ * @param reflowablePositionsStrategy Strategy used to calculate the number of positions in a
+ *        reflowable resource.
  */
-class EpubParser : PublicationParser, org.readium.r2.streamer.parser.PublicationParser {
+class EpubParser(
+    private val reflowablePositionsStrategy: EpubPositionsService.ReflowableStrategy = EpubPositionsService.ReflowableStrategy.recommended
+) : PublicationParser, org.readium.r2.streamer.parser.PublicationParser {
 
     override suspend fun parse(asset: PublicationAsset, fetcher: Fetcher, warnings: WarningLogger?): Publication.Builder? =
         _parse(asset, fetcher, asset.name)
@@ -89,7 +95,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
         if (asset.mediaType() != MediaType.EPUB)
             return null
 
-        val opfPath = getRootFilePath(fetcher)
+        val opfPath = getRootFilePath(fetcher).addPrefix("/")
         val opfXmlDocument = fetcher.get(opfPath).readAsXml().getOrThrow()
         val packageDocument = PackageDocument.parse(opfXmlDocument, opfPath)
             ?:  throw Exception("Invalid OPF file.")
@@ -112,7 +118,7 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
             manifest = manifest,
             fetcher = fetcher,
             servicesBuilder = Publication.ServicesBuilder(
-                positions = (EpubPositionsService)::create,
+                positions = EpubPositionsService.createFactory(reflowablePositionsStrategy),
                 search = StringSearchService.createDefaultFactory(),
             )
         )
@@ -175,7 +181,12 @@ class EpubParser : PublicationParser, org.readium.r2.streamer.parser.Publication
 
     private suspend fun parseNavigationData(packageDocument: PackageDocument, fetcher: Fetcher): Map<String, List<Link>> =
         if (packageDocument.epubVersion < 3.0) {
-            val ncxItem = packageDocument.manifest.firstOrNull { MediaType.NCX.contains(it.mediaType) }
+            val ncxItem =
+                if (packageDocument.spine.toc != null) {
+                    packageDocument.manifest.firstOrNull { it.id == packageDocument.spine.toc }
+                } else {
+                    packageDocument.manifest.firstOrNull { MediaType.NCX.contains(it.mediaType) }
+                }
             ncxItem?.let {
                 val ncxPath = Href(ncxItem.href, baseHref = packageDocument.path).string
                 fetcher.readAsXmlOrNull(ncxPath)?.let { NcxParser.parse(it, ncxPath) }

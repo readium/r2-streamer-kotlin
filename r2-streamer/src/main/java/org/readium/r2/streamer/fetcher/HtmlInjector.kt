@@ -13,11 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.readium.r2.shared.Injectable
 import org.readium.r2.shared.ReadiumCSSName
-import org.readium.r2.shared.fetcher.Resource
-import org.readium.r2.shared.fetcher.LazyResource
-import org.readium.r2.shared.fetcher.ResourceTry
-import org.readium.r2.shared.fetcher.TransformingResource
-import org.readium.r2.shared.fetcher.mapCatching
+import org.readium.r2.shared.fetcher.*
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.epub.EpubLayout
 import org.readium.r2.shared.publication.epub.layoutOf
@@ -25,6 +21,7 @@ import org.readium.r2.shared.publication.presentation.presentation
 import org.readium.r2.shared.publication.services.isProtected
 import org.readium.r2.streamer.parser.epub.ReadiumCssLayout
 import org.readium.r2.streamer.server.Resources
+import timber.log.Timber
 import java.io.File
 
 internal class HtmlInjector(
@@ -59,8 +56,13 @@ internal class HtmlInjector(
     private fun injectReflowableHtml(content: String): String {
         var resourceHtml = content
         // Inject links to css and js files
-        var beginHeadIndex = resourceHtml.indexOf("<head>", 0, false) + 6
-        var endHeadIndex = resourceHtml.indexOf("</head>", 0, false)
+        val head = regexForOpeningHTMLTag("head").find(resourceHtml, 0)
+        if (head == null) {
+            Timber.e("No <head> tag found in this resource")
+            return resourceHtml
+        }
+        var beginHeadIndex = head.range.last + 1
+        var endHeadIndex = resourceHtml.indexOf("</head>", 0, true)
         if (endHeadIndex == -1)
             return content
 
@@ -72,19 +74,15 @@ internal class HtmlInjector(
 
         beginIncludes.add(getHtmlLink("/assets/readium-css/${layout.readiumCSSPath}ReadiumCSS-before.css"))
         endIncludes.add(getHtmlLink("/assets/readium-css/${layout.readiumCSSPath}ReadiumCSS-after.css"))
-        endIncludes.add(getHtmlScript("/assets/scripts/gestures.js"))
-        endIncludes.add(getHtmlScript("/assets/scripts/utils.js"))
-        endIncludes.add(getHtmlScript("/assets/scripts/crypto-sha256.js"))
-        endIncludes.add(getHtmlScript("/assets/scripts/highlight.js"))
+        endIncludes.add(getHtmlScript("/assets/scripts/readium-reflowable.js"))
 
         customResources?.let {
             // Inject all custom resourses
             for ((key, value) in it.resources) {
                 if (value is Pair<*, *>) {
-                    val res = value as Pair<String, String>
-                    if (Injectable(res.second) == Injectable.Script) {
+                    if (Injectable(value.second as String) == Injectable.Script) {
                         endIncludes.add(getHtmlScript("/${Injectable.Script.rawValue}/$key"))
-                    } else if (Injectable(res.second) == Injectable.Style) {
+                    } else if (Injectable(value.second as String) == Injectable.Style) {
                         endIncludes.add(getHtmlLink("/${Injectable.Style.rawValue}/$key"))
                     }
                 }
@@ -118,20 +116,20 @@ internal class HtmlInjector(
 
         // Inject userProperties
         getProperties(publication.userSettingsUIPreset)?.let { propertyPair ->
-            val html = Regex("""<html.*>""").find(resourceHtml, 0)
+            val html = regexForOpeningHTMLTag("html").find(resourceHtml, 0)
             html?.let {
                 val match = Regex("""(style=("([^"]*)"[ >]))|(style='([^']*)'[ >])""").find(html.value, 0)
                 if (match != null) {
                     val beginStyle = match.range.first + 7
                     var newHtml = html.value
                     newHtml = StringBuilder(newHtml).insert(beginStyle, "${buildStringProperties(propertyPair)} ").toString()
-                    resourceHtml = StringBuilder(resourceHtml).replace(Regex("""<html.*>"""), newHtml)
+                    resourceHtml = StringBuilder(resourceHtml).replace(regexForOpeningHTMLTag("html"), newHtml)
                 } else {
-                    val beginHtmlIndex = resourceHtml.indexOf("<html", 0, false) + 5
+                    val beginHtmlIndex = resourceHtml.indexOf("<html", 0, true) + 5
                     resourceHtml = StringBuilder(resourceHtml).insert(beginHtmlIndex, " style=\"${buildStringProperties(propertyPair)}\"").toString()
                 }
             } ?:run {
-                val beginHtmlIndex = resourceHtml.indexOf("<html", 0, false) + 5
+                val beginHtmlIndex = resourceHtml.indexOf("<html", 0, true) + 5
                 resourceHtml = StringBuilder(resourceHtml).insert(beginHtmlIndex, " style=\"${buildStringProperties(propertyPair)}\"").toString()
             }
         }
@@ -144,11 +142,11 @@ internal class HtmlInjector(
     private fun applyDirectionAttribute(resourceHtml: String, publication: Publication): String {
         var resourceHtml1 = resourceHtml
         fun addRTLDir(tagName: String, html: String): String {
-            return Regex("""<$tagName.*>""").find(html, 0)?.let { result ->
+            return regexForOpeningHTMLTag(tagName).find(html, 0)?.let { result ->
                 Regex("""dir=""").find(result.value, 0)?.let {
                     html
                 } ?: run {
-                    val beginHtmlIndex = html.indexOf("<$tagName", 0, false) + 5
+                    val beginHtmlIndex = html.indexOf("<$tagName", 0, true) + 5
                     StringBuilder(html).insert(beginHtmlIndex, " dir=\"rtl\"").toString()
                 }
             } ?: run {
@@ -164,14 +162,16 @@ internal class HtmlInjector(
         return resourceHtml1
     }
 
+    private fun regexForOpeningHTMLTag(name: String): Regex =
+        Regex("""<$name.*?>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
     private fun injectFixedLayoutHtml(content: String): String {
         var resourceHtml = content
-        val endHeadIndex = resourceHtml.indexOf("</head>", 0, false)
+        val endHeadIndex = resourceHtml.indexOf("</head>", 0, true)
         if (endHeadIndex == -1)
             return content
         val includes = mutableListOf<String>()
-        includes.add(getHtmlScript("/assets/scripts/gestures.js"))
-        includes.add(getHtmlScript("/assets/scripts/utils.js"))
+        includes.add(getHtmlScript("/assets/scripts/readium-fixed.js"))
         for (element in includes) {
             resourceHtml = StringBuilder(resourceHtml).insert(endHeadIndex, element).toString()
         }

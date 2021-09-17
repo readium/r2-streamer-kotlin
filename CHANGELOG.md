@@ -9,6 +9,18 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 * EPUB publications implement a `SearchService` to search through the content.
+* Known DRM schemes (LCP and Adobe ADEPT) are now sniffed by the `Streamer`, when no registered `ContentProtection` supports them.
+    * This is helpful to present an error message when the user attempts to open a protected publication not supported by the app.
+
+### Changed
+
+* Upgraded to Kotlin 1.5.21 and Gradle 7.1.1
+* The default EPUB positions service now uses the archive entry length when available. [This is similar to how Adobe RMSDK generates page numbers](https://github.com/readium/architecture/issues/123).
+    * To use the former strategy, create the `Streamer` with: `Streamer(parsers = listOf(EpubParser(reflowablePositionsStrategy = OriginalLength(pageLength = 1024))))`
+
+### Fixed
+
+* EPUB style injection when a resource has a `<head>` tag with attributes.
 
 
 ## [2.0.0]
